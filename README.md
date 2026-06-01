@@ -1,4 +1,4 @@
-# strangers.log
+# Folio BU
 
 > Anonymous journaling platform for college students powered by Next.js, Supabase, and Gemini AI.
 
