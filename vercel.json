@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/prompt/today",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/reflection/weekly",
+      "schedule": "0 0 * * 0"
+    }
+  ]
+}
