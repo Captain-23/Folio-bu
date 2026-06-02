@@ -75,7 +75,7 @@ export default function RegisterPage() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50">
       <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-lg">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-purple-600">strangers.log</h1>
+          <h1 className="text-3xl font-bold text-purple-600">Folio BU</h1>
           <p className="text-gray-600 text-sm mt-2">
             Bennett students only — use your @bennett.edu.in email
           </p>

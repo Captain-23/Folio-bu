@@ -141,7 +141,7 @@ export default function AuthPage() {
           <div className="border-b-4 border-on-background p-6 bg-surface-container flex items-center justify-between">
             <div>
               <h1 className="font-headline-lg text-headline-lg uppercase text-primary tracking-tighter">
-                Pixel_Log
+                Folio BU
               </h1>
               <p className="font-label-sm text-label-sm text-on-surface-variant uppercase mt-1">
                 Chronicle Protocol v1.0

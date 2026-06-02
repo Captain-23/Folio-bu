@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { SiteHeader } from '@/components/site-header'
 import { EXPLORE_FEED_IDS, TODAY_STRIP_IDS, getFeedEntry } from '@/lib/feed-entries'
 
@@ -38,6 +39,44 @@ function stripTextClasses(variant?: 'secondary' | 'primary' | 'surface') {
 export default function FeedPage() {
   const stripEntries = TODAY_STRIP_IDS.map((id) => getFeedEntry(id)!)
   const exploreEntries = EXPLORE_FEED_IDS.map((id) => getFeedEntry(id)!)
+  const [weeklyDigest, setWeeklyDigest] = useState<
+    Array<{
+      id: string
+      content: string
+      mood: string | null
+      createdAt: string
+      user: { alias: string | null }
+      _count: { reactions: number }
+    }>
+  >([])
+  const [digestLoading, setDigestLoading] = useState(true)
+
+  useEffect(() => {
+    const loadWeeklyDigest = async () => {
+      try {
+        const res = await fetch('/api/entries/weekly-digest')
+        if (!res.ok) return
+
+        const data = (await res.json()) as {
+          entries?: Array<{
+            id: string
+            content: string
+            mood: string | null
+            createdAt: string
+            user: { alias: string | null }
+            _count: { reactions: number }
+          }>
+        }
+        setWeeklyDigest(Array.isArray(data.entries) ? data.entries : [])
+      } catch {
+        setWeeklyDigest([])
+      } finally {
+        setDigestLoading(false)
+      }
+    }
+
+    loadWeeklyDigest()
+  }, [])
 
   return (
     <div className="min-h-screen bg-background text-on-background flex flex-col">
@@ -97,6 +136,56 @@ export default function FeedPage() {
               )
             })}
           </div>
+        </section>
+
+        <section>
+          <div className="flex items-center gap-2 mb-6">
+            <span
+              className="material-symbols-outlined text-primary"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              calendar_month
+            </span>
+            <h2 className="font-headline-md text-headline-md text-primary uppercase tracking-wide">
+              Weekly Digest
+            </h2>
+          </div>
+          {digestLoading ? (
+            <div className="bg-surface-container-highest pixel-border p-5 text-on-surface-variant">
+              Loading this week&apos;s highlights...
+            </div>
+          ) : weeklyDigest.length === 0 ? (
+            <div className="bg-surface-container-highest pixel-border p-5 text-on-surface-variant">
+              No reacted entries yet this week.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {weeklyDigest.map((entry) => (
+                <Link
+                  key={entry.id}
+                  href={`/journal/${entry.id}`}
+                  className="bg-surface-container pixel-border pixel-shadow pixel-shadow-hover transition-all p-5 block hover:translate-x-[1px] hover:translate-y-[1px]"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="font-label-lg text-label-lg text-on-surface">
+                      @{entry.user.alias ?? 'anonymous'}
+                    </p>
+                    <span className="bg-surface px-2 py-1 pixel-border-thin font-label-sm text-label-sm">
+                      ♥ {entry._count.reactions}
+                    </span>
+                  </div>
+                  {entry.mood && (
+                    <p className="font-label-sm text-label-sm text-primary uppercase mb-3">
+                      Mood: {entry.mood}
+                    </p>
+                  )}
+                  <p className="font-body-md text-body-md text-on-surface-variant line-clamp-4">
+                    {entry.content}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          )}
         </section>
 
         <section>

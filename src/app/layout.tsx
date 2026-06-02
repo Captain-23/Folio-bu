@@ -3,7 +3,7 @@ import { Providers } from '@/components/providers'
 import './globals.css'
 
 export const metadata = {
-  title: 'PIXEL_LOG - Feed',
+  title: 'Folio BU - Feed',
   description: 'Anonymous pixel-art journaling platform for college students',
 }
 

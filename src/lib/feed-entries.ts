@@ -233,6 +233,16 @@ export function getFeedEntry(id: string): FeedEntry | undefined {
   return ENTRY_MAP.get(id)
 }
 
+export function getAuthorSlugFromHandle(authorHandle: string): string {
+  return authorHandle.replace(/^@/, '').toLowerCase()
+}
+
+export function getFeedEntriesByAuthorSlug(authorSlug: string): FeedEntry[] {
+  return FEED_ENTRIES.filter(
+    (entry) => getAuthorSlugFromHandle(entry.authorHandle) === authorSlug.toLowerCase()
+  )
+}
+
 export const TODAY_STRIP_IDS = ['morning-coffee', 'debugging-soul', 'harvesting-carrots'] as const
 
 export const EXPLORE_FEED_IDS = [

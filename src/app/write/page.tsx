@@ -5,9 +5,32 @@ import { SiteHeader } from '@/components/site-header'
 
 export default function WritePage() {
   const [currentDate, setCurrentDate] = useState('')
+  const [prompt, setPrompt] = useState<string | null>(null)
+  const [promptLoading, setPromptLoading] = useState(true)
+  const [promptError, setPromptError] = useState('')
 
   useEffect(() => {
     setCurrentDate(new Date().toISOString().split('T')[0])
+  }, [])
+
+  useEffect(() => {
+    const loadPrompt = async () => {
+      try {
+        const res = await fetch('/api/prompt/today')
+        if (!res.ok) {
+          setPromptError('Could not load today’s prompt.')
+          return
+        }
+        const data = (await res.json()) as { prompt: string | null }
+        setPrompt(data.prompt)
+      } catch {
+        setPromptError('Could not load today’s prompt.')
+      } finally {
+        setPromptLoading(false)
+      }
+    }
+
+    loadPrompt()
   }, [])
 
   return (
@@ -69,6 +92,36 @@ export default function WritePage() {
               </div>
             </div>
 
+            {/* Reflection Prompt */}
+            <div className="px-4 pt-4">
+              <div className="bg-surface-container-low border-2 border-on-background px-4 py-3 flex items-start gap-3">
+                <span
+                  className="material-symbols-outlined text-secondary mt-0.5"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  lightbulb
+                </span>
+                <div>
+                  <p className="font-label-sm text-label-sm text-on-surface-variant uppercase mb-1 tracking-wide">
+                    Reflection prompt
+                  </p>
+                  {promptLoading ? (
+                    <p className="font-body-sm text-body-sm text-on-surface-variant">
+                      Fetching today&apos;s idea...
+                    </p>
+                  ) : prompt ? (
+                    <p className="font-body-md text-body-md text-on-background">
+                      {prompt}
+                    </p>
+                  ) : (
+                    <p className="font-body-md text-body-md text-on-surface-variant">
+                      {promptError || 'What made you smile today?'}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Title Input Area */}
             <div className="p-4 border-b-2 border-outline-variant border-dashed flex flex-wrap items-center gap-4">
               <div className="hidden sm:block w-[2px] h-8 bg-on-background opacity-10" />
@@ -87,7 +140,7 @@ export default function WritePage() {
               </div>
               <textarea
                 className="w-full h-full min-h-[400px] bg-transparent border-none focus:ring-0 focus:outline-none resize-none p-4 font-body-lg text-body-lg text-on-background leading-[32px] notebook-lines placeholder-on-surface-variant"
-                placeholder="Dear pixel log..."
+                placeholder="Dear Folio BU..."
               />
             </div>
 

@@ -64,7 +64,7 @@ export function SiteHeader() {
           href="/feed"
           className="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg font-black text-primary tracking-tighter uppercase shrink-0 hover:translate-x-[2px] hover:translate-y-[2px] transition-all duration-75"
         >
-          PIXEL_LOG
+          Folio BU
         </Link>
 
         <div className="flex items-center gap-3 md:gap-4">

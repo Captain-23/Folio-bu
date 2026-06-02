@@ -29,6 +29,11 @@ export const OnboardingSchema = z.object({
   avatarId: z.string().refine(isAvatarId, { message: 'Choose one of the 8 character avatars' }),
 })
 
+export const UpdateProfileSchema = z.object({
+  avatarId: z.string().refine(isAvatarId, { message: 'Choose one of the 8 character avatars' }),
+  bio: z.string().trim().max(240, 'Bio must be at most 240 characters').optional(),
+})
+
 export const CreateEntrySchema = z.object({
   content: z
     .string()

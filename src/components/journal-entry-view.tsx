@@ -12,12 +12,49 @@ type JournalEntryViewProps = {
 export function JournalEntryView({ entry }: JournalEntryViewProps) {
   const [comments] = useState(entry.comments)
   const [messageInput, setMessageInput] = useState('')
+  const [reactions, setReactions] = useState(entry.reactions)
+  const [selectedReaction, setSelectedReaction] = useState<string | null>(null)
+
+  const REACTION_OPTIONS = ['❤️', '💙', '👏', '🔥', '😢', '🌱'] as const
 
   const handlePostMessage = () => {
     if (messageInput.trim()) {
       console.log('Posting message:', messageInput)
       setMessageInput('')
     }
+  }
+
+  const handleReaction = (emoji: string) => {
+    const isSameReaction = selectedReaction === emoji
+
+    setReactions((prev) => {
+      const next = [...prev]
+      const selectedIndex = selectedReaction ? next.findIndex((r) => r.emoji === selectedReaction) : -1
+
+      if (selectedIndex >= 0) {
+        const updated = { ...next[selectedIndex], count: Math.max(0, next[selectedIndex].count - 1) }
+        if (updated.count === 0) {
+          next.splice(selectedIndex, 1)
+        } else {
+          next[selectedIndex] = updated
+        }
+      }
+
+      if (isSameReaction) {
+        return next
+      }
+
+      const targetIndex = next.findIndex((r) => r.emoji === emoji)
+      if (targetIndex >= 0) {
+        next[targetIndex] = { ...next[targetIndex], count: next[targetIndex].count + 1 }
+      } else {
+        next.push({ emoji, count: 1 })
+      }
+
+      return next
+    })
+
+    setSelectedReaction(isSameReaction ? null : emoji)
   }
 
   return (
@@ -40,6 +77,12 @@ export function JournalEntryView({ entry }: JournalEntryViewProps) {
               Back to Feed
             </Link>
             <div className="flex items-center gap-3 mb-4">
+              <Link
+                href={`/profile/${entry.authorHandle.replace(/^@/, '').toLowerCase()}`}
+                className="font-label-lg text-label-lg text-primary underline hover:text-secondary transition-colors"
+              >
+                {entry.authorHandle}
+              </Link>
               {entry.category && (
                 <span className="bg-secondary text-on-secondary font-label-sm text-label-sm px-2 py-1 border-2 border-on-background uppercase">
                   {entry.category}
@@ -107,17 +150,45 @@ export function JournalEntryView({ entry }: JournalEntryViewProps) {
             <span className="font-label-lg text-label-lg text-on-surface-variant mr-2">
               Reactions:
             </span>
-            {entry.reactions.map((reaction) => (
+            {reactions.map((reaction) => (
               <button
                 key={reaction.emoji}
                 type="button"
-                className="flex items-center gap-1 bg-surface-container-highest px-3 py-1 border-2 border-on-background shadow-[2px_2px_0px_0px_#865046] hover:translate-x-[2px] hover:translate-y-[2px] transition-transform text-primary group"
+                onClick={() => handleReaction(reaction.emoji)}
+                className={`flex items-center gap-1 px-3 py-1 border-2 border-on-background shadow-[2px_2px_0px_0px_#865046] hover:translate-x-[2px] hover:translate-y-[2px] transition-transform group ${
+                  selectedReaction === reaction.emoji
+                    ? 'bg-primary-container text-on-primary-container'
+                    : 'bg-surface-container-highest text-primary'
+                }`}
               >
                 <span className="font-label-sm text-label-sm">
                   {reaction.emoji} {reaction.count}
                 </span>
               </button>
             ))}
+          </div>
+
+          <div className="mt-4 bg-surface-container p-4 border-2 border-on-background">
+            <p className="font-label-sm text-label-sm text-on-surface-variant uppercase mb-3">
+              Add your reaction
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {REACTION_OPTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => handleReaction(emoji)}
+                  className={`px-3 py-2 border-2 border-on-background shadow-[2px_2px_0px_0px_#865046] transition-all ${
+                    selectedReaction === emoji
+                      ? 'bg-primary text-on-primary translate-x-[1px] translate-y-[1px] shadow-none'
+                      : 'bg-surface hover:translate-x-[1px] hover:translate-y-[1px]'
+                  }`}
+                  aria-label={`React with ${emoji}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="h-1 bg-[linear-gradient(to_right,#1e1b16_50%,transparent_50%)] bg-[length:8px_100%] w-full my-12" />
@@ -184,7 +255,7 @@ export function JournalEntryView({ entry }: JournalEntryViewProps) {
       </main>
 
       <footer className="bg-surface-container-highest border-t-4 border-on-background border-dashed w-full py-margin-desktop px-gutter flex flex-col items-center gap-4 text-center mt-auto mb-[72px] md:mb-0">
-        <div className="font-headline-md text-primary">PIXEL_LOG</div>
+        <div className="font-headline-md text-primary">Folio BU</div>
         <div className="font-body-md text-body-md text-on-surface-variant">
           © 199X CHRONICLE8. BIT-PERFECT JOURNALING.
         </div>

@@ -20,14 +20,11 @@ enum Role {
 }
 
 enum Mood {
-  hopeful
-  exhausted
+  happy
+  sad
+  stress
   anxious
   grateful
-  nostalgic
-  numb
-  frustrated
-  content
 }
 
 // ─── MODELS ───────────────────────────────────────────────────────────────────
@@ -40,6 +37,7 @@ model User {
   password           String             // bcrypt hashed — never plain text
   alias              String?            @unique // chosen pseudonym after signup
   avatarId           String?            // one of 8 non-human avatars
+  bio                String?            @db.VarChar(240)
   onboardingComplete Boolean            @default(false)
   role               Role               @default(STUDENT)
   createdAt          DateTime           @default(now())
@@ -47,6 +45,8 @@ model User {
   entries          Entry[]
   reactions        Reaction[]
   weeklyReflection WeeklyReflection[]
+  followers        Follow[]           @relation("UserFollowers")
+  following        Follow[]           @relation("UserFollowing")
 }
 
 model Entry {
@@ -103,4 +103,17 @@ model WeeklyReflection {
   createdAt DateTime @default(now())
 
   @@unique([userId, weekStart])
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
 }

@@ -5,25 +5,21 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+const GEMINI_MODEL = 'gemini-1.5-flash'
+const apiKey = process.env.GEMINI_API_KEY
+const model = apiKey
+  ? new GoogleGenerativeAI(apiKey).getGenerativeModel({ model: GEMINI_MODEL })
+  : null
 
 // Allowed mood values — must match the Prisma Mood enum exactly
-const MOODS = [
-  'hopeful',
-  'exhausted',
-  'anxious',
-  'grateful',
-  'nostalgic',
-  'numb',
-  'frustrated',
-  'content',
-] as const
+const MOODS = ['happy', 'sad', 'stress', 'grateful', 'anxious'] as const
 type MoodType = (typeof MOODS)[number]
 
 // ─── MODERATION ───────────────────────────────────────────────────────────────
 // Returns { safe: true } or { safe: false, reason: string }
 export async function moderateEntry(content: string): Promise<{ safe: boolean; reason?: string }> {
+  if (!model) return { safe: true }
+
   try {
     const prompt = `
 You are a content moderation system for a college anonymous journaling app.
@@ -51,11 +47,13 @@ Entry: "${content}"
 // ─── MOOD TAGGING ─────────────────────────────────────────────────────────────
 // Returns one mood string from the allowed list, or null on failure.
 export async function tagMood(content: string): Promise<MoodType | null> {
+  if (!model) return null
+
   try {
     const prompt = `
 You are a mood classifier for a college journaling app.
 Read the journal entry and respond with EXACTLY ONE word from this list:
-hopeful, exhausted, anxious, grateful, nostalgic, numb, frustrated, content
+happy, sad, stress, grateful, anxious
 
 No punctuation. No explanation. Just the single word.
 
@@ -74,6 +72,8 @@ Entry: "${content}"
 // ─── EMPATHY REFLECTION ───────────────────────────────────────────────────────
 // Returns a 1-2 sentence warm reflection, or null on failure.
 export async function generateReflection(content: string): Promise<string | null> {
+  if (!model) return null
+
   try {
     const prompt = `
 You are a warm, non-judgemental voice responding to a college student's anonymous journal entry.
@@ -98,6 +98,8 @@ Journal entry: "${content}"
 // ─── DAILY PROMPT ─────────────────────────────────────────────────────────────
 // Returns a single journaling question under 15 words.
 export async function generateDailyPrompt(): Promise<string | null> {
+  if (!model) return null
+
   try {
     const day = new Date().toLocaleDateString('en-US', { weekday: 'long' })
     const prompt = `
@@ -123,6 +125,7 @@ Respond with ONLY the question.
 // Takes an array of entry strings, returns a poetic weekly summary.
 export async function generateWeeklyReflection(entries: string[]): Promise<string | null> {
   if (entries.length < 2) return null
+  if (!model) return null
 
   try {
     const entriesText = entries.map((e, i) => `Entry ${i + 1}: "${e}"`).join('\n')

@@ -1,8 +1,8 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import {
   COMMUNITY_RULES,
-  COMMUNITY_RULES_CHECKBOX_LABEL,
   COMMUNITY_RULES_HEADING,
 } from '@/lib/community-rules'
 
@@ -18,6 +18,20 @@ export function SignupCommunityRules({
   variant = 'pixel',
 }: SignupCommunityRulesProps) {
   const isPixel = variant === 'pixel'
+  const [ruleChecks, setRuleChecks] = useState<boolean[]>(() => COMMUNITY_RULES.map(() => false))
+
+  useEffect(() => {
+    if (!checked) {
+      setRuleChecks(COMMUNITY_RULES.map(() => false))
+    }
+  }, [checked])
+
+  const handleRuleToggle = (index: number, nextChecked: boolean) => {
+    const nextRuleChecks = [...ruleChecks]
+    nextRuleChecks[index] = nextChecked
+    setRuleChecks(nextRuleChecks)
+    onChange(nextRuleChecks.every(Boolean))
+  }
 
   return (
     <div
@@ -39,28 +53,38 @@ export function SignupCommunityRules({
       <ul
         className={
           isPixel
-            ? 'list-disc pl-5 space-y-2 font-body-md text-body-md text-on-surface-variant'
-            : 'list-disc pl-5 space-y-2 text-sm text-gray-600'
+            ? 'max-h-64 overflow-y-auto pr-2 space-y-3 font-body-md text-body-md text-on-surface-variant'
+            : 'max-h-64 overflow-y-auto pr-2 space-y-3 text-sm text-gray-600'
         }
       >
-        {COMMUNITY_RULES.map((rule) => (
-          <li key={rule}>{rule}</li>
+        {COMMUNITY_RULES.map((rule, index) => (
+          <li key={rule} className="list-none">
+            <label
+              className={
+                isPixel
+                  ? 'flex items-start gap-3 cursor-pointer font-body-md text-body-md text-on-surface-variant'
+                  : 'flex items-start gap-3 cursor-pointer text-sm text-gray-700'
+              }
+            >
+              <input
+                type="checkbox"
+                checked={ruleChecks[index]}
+                onChange={(e) => handleRuleToggle(index, e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-primary border-2 border-on-background"
+              />
+              <span>{rule}</span>
+            </label>
+          </li>
         ))}
       </ul>
       <label
         className={
           isPixel
-            ? 'flex items-start gap-3 cursor-pointer font-label-sm text-label-sm text-on-background'
-            : 'flex items-start gap-3 cursor-pointer text-sm text-gray-700'
+            ? 'font-label-sm text-label-sm text-on-surface-variant'
+            : 'text-xs text-gray-600'
         }
       >
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 accent-primary border-2 border-on-background"
-        />
-        <span>{COMMUNITY_RULES_CHECKBOX_LABEL}</span>
+        Accounts are only created once all boxes are checked.
       </label>
     </div>
   )
