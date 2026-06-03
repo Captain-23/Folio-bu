@@ -1,7 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { useSession } from 'next-auth/react'
+import { AuthGuard } from '@/components/auth-guard'
+import { useAuth } from '@/contexts/auth-context'
+import { apiFetch } from '@/lib/api-client'
+import type { SafeUser } from '@/lib/serializers/safe-user'
 import { AvatarIcon } from '@/components/avatar-icon'
 import { AvatarPicker } from '@/components/avatar-picker'
 import { SiteHeader } from '@/components/site-header'
@@ -13,8 +16,8 @@ type CalendarCell = {
   isToday: boolean
 }
 
-export default function ProfilePage() {
-  const { data: session, update } = useSession()
+function ProfilePageContent() {
+  const { user, setUserLocal } = useAuth()
   const [stats, setStats] = useState({
     entriesCount: 0,
     reactionsReceived: 0,
@@ -47,7 +50,7 @@ export default function ProfilePage() {
   useEffect(() => {
     const loadMilestones = async () => {
       try {
-        const res = await fetch('/api/profile/milestones')
+        const res = await apiFetch('/api/profile/milestones')
         if (!res.ok) return
 
         const data = (await res.json()) as {
@@ -73,7 +76,7 @@ export default function ProfilePage() {
   useEffect(() => {
     const loadProfile = async () => {
       try {
-        const res = await fetch('/api/profile')
+        const res = await apiFetch('/api/profile')
         if (!res.ok) return
 
         const data = (await res.json()) as {
@@ -83,18 +86,16 @@ export default function ProfilePage() {
         }
 
         setProfile({
-          alias: data.alias ?? session?.user?.alias ?? 'anonymous',
+          alias: data.alias ?? user?.alias ?? 'anonymous',
           avatarId: data.avatarId && isAvatarId(data.avatarId) ? data.avatarId : 'robot',
           bio: data.bio ?? '',
         })
       } catch {
         setProfile((prev) => ({
           ...prev,
-          alias: session?.user?.alias ?? prev.alias,
+          alias: user?.alias ?? prev.alias,
           avatarId:
-            session?.user?.avatarId && isAvatarId(session.user.avatarId)
-              ? session.user.avatarId
-              : prev.avatarId,
+            user?.avatarId && isAvatarId(user.avatarId) ? user.avatarId : prev.avatarId,
         }))
       } finally {
         setProfileLoading(false)
@@ -102,7 +103,7 @@ export default function ProfilePage() {
     }
 
     loadProfile()
-  }, [session?.user?.alias, session?.user?.avatarId])
+  }, [user?.alias, user?.avatarId])
 
   const milestones = useMemo(
     () => [
@@ -218,9 +219,8 @@ export default function ProfilePage() {
     setProfileSaving(true)
 
     try {
-      const res = await fetch('/api/profile', {
+      const res = await apiFetch('/api/profile', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           avatarId: profile.avatarId,
           bio: profile.bio.trim(),
@@ -232,6 +232,7 @@ export default function ProfilePage() {
         alias?: string
         avatarId?: string
         bio?: string
+        user?: SafeUser
       }
 
       if (!res.ok) {
@@ -248,7 +249,14 @@ export default function ProfilePage() {
         bio: data.bio ?? '',
       })
 
-      await update({ avatarId: nextAvatarId })
+      if (data.user) {
+        setUserLocal(data.user, user?.onboardingComplete ?? true)
+      } else if (user) {
+        setUserLocal(
+          { ...user, avatarId: nextAvatarId, bio: data.bio ?? profile.bio },
+          user.onboardingComplete
+        )
+      }
       setIsEditingProfile(false)
     } catch {
       setProfileError('Could not update profile')
@@ -546,5 +554,13 @@ export default function ProfilePage() {
         </a>
       </nav>
     </div>
+  )
+}
+
+export default function ProfilePage() {
+  return (
+    <AuthGuard>
+      <ProfilePageContent />
+    </AuthGuard>
   )
 }

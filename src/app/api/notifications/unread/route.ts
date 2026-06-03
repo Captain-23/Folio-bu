@@ -1,15 +1,18 @@
-// GET /api/notifications/unread — unread reactions + comments count for header badge.
+// GET /api/notifications/unread — unread count for header badge
 
-import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { getAuthContext } from '@/lib/auth/require-auth'
 
-export async function GET() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) {
+export async function GET(req: NextRequest) {
+  const auth = await getAuthContext(req)
+  if (!auth) {
     return NextResponse.json({ count: 0 })
   }
 
-  // TODO: aggregate unread reactions and comments from the database
-  return NextResponse.json({ count: 0 })
+  const count = await prisma.notification.count({
+    where: { userId: auth.userId, isRead: false },
+  })
+
+  return NextResponse.json({ count })
 }

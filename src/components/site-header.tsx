@@ -3,31 +3,30 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { signOut, useSession } from 'next-auth/react'
 import { AvatarIcon } from '@/components/avatar-icon'
+import { useAuth } from '@/contexts/auth-context'
+import { apiFetch } from '@/lib/api-client'
 import type { AvatarId } from '@/lib/avatars'
 import { isAvatarId } from '@/lib/avatars'
 
 export function SiteHeader() {
-  const { data: session, status } = useSession()
+  const { user, loading, logout } = useAuth()
   const pathname = usePathname()
   const [unreadCount, setUnreadCount] = useState(0)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  const isLoggedIn = status === 'authenticated' && session?.user?.onboardingComplete
+  const isLoggedIn = !loading && !!user?.onboardingComplete
 
   const avatarId: AvatarId =
-    session?.user?.avatarId && isAvatarId(session.user.avatarId)
-      ? session.user.avatarId
-      : 'robot'
+    user?.avatarId && isAvatarId(user.avatarId) ? user.avatarId : 'robot'
 
   useEffect(() => {
     if (!isLoggedIn) return
 
     const loadUnread = async () => {
       try {
-        const res = await fetch('/api/notifications/unread')
+        const res = await apiFetch('/api/notifications/unread')
         if (res.ok) {
           const data = await res.json()
           setUnreadCount(typeof data.count === 'number' ? data.count : 0)
@@ -54,7 +53,7 @@ export function SiteHeader() {
 
   const handleSignOut = () => {
     setMenuOpen(false)
-    signOut({ callbackUrl: '/login' })
+    void logout()
   }
 
   return (
@@ -109,9 +108,9 @@ export function SiteHeader() {
                     role="menu"
                     className="absolute right-0 top-full mt-2 w-48 bg-surface border-2 border-on-background shadow-[4px_4px_0px_0px_#653d1e] z-50 py-1"
                   >
-                    {session?.user?.alias && (
+                    {user?.alias && (
                       <p className="px-3 py-2 font-label-sm text-label-sm text-on-surface-variant border-b-2 border-outline-variant truncate">
-                        {session.user.alias}
+                        {user.alias}
                       </p>
                     )}
                     <Link

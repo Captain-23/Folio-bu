@@ -1,32 +1,61 @@
-// POST /api/entries/[id]/react
-// Toggles the current user's "Felt this" reaction on an entry.
-// Reacting twice removes the reaction (toggle behaviour).
-// The userId is stored for uniqueness but never returned in responses.
+// POST /api/entries/:id/react — toggle reaction (auth required)
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { requireAuth, AuthError } from '@/lib/auth/require-auth'
+import { handleRouteError } from '@/lib/api/errors'
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+type RouteContext = { params: { id: string } }
 
-  const entryId = params.id
-  const userId = session.user.id
+export async function POST(_req: NextRequest, { params }: RouteContext) {
+  try {
+    const auth = await requireAuth(_req)
+    const entryId = params.id
 
-  // Check if reaction already exists
-  const existing = await prisma.reaction.findUnique({
-    where: { entryId_userId: { entryId, userId } },
-  })
+    const entry = await prisma.entry.findUnique({
+      where: { id: entryId },
+      select: { id: true, isPublished: true, isRemoved: true, userId: true },
+    })
 
-  if (existing) {
-    // Toggle off — remove the reaction
-    await prisma.reaction.delete({ where: { id: existing.id } })
-    return NextResponse.json({ reacted: false })
-  } else {
-    // Toggle on — add the reaction
-    await prisma.reaction.create({ data: { entryId, userId } })
-    return NextResponse.json({ reacted: true })
+    if (!entry || !entry.isPublished || entry.isRemoved) {
+      return NextResponse.json({ error: 'Entry not found' }, { status: 404 })
+    }
+
+    const existing = await prisma.reaction.findUnique({
+      where: { entryId_userId: { entryId, userId: auth.userId } },
+    })
+
+    let reacted: boolean
+
+    if (existing) {
+      await prisma.reaction.delete({ where: { id: existing.id } })
+      reacted = false
+    } else {
+      await prisma.reaction.create({
+        data: { entryId, userId: auth.userId },
+      })
+      reacted = true
+
+      if (entry.userId !== auth.userId) {
+        await prisma.notification.create({
+          data: {
+            userId: entry.userId,
+            actorId: auth.userId,
+            type: 'reaction',
+            message: 'Someone resonated with your journal entry',
+            entryId,
+          },
+        })
+      }
+    }
+
+    const reactionCount = await prisma.reaction.count({ where: { entryId } })
+
+    return NextResponse.json({ reacted, reactionCount })
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    return handleRouteError(error)
   }
 }

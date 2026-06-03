@@ -1,18 +1,15 @@
-// POST /api/auth/onboarding — set pseudonym and avatar after signup.
+// POST /api/auth/onboarding — set pseudonym and avatar after signup (JWT).
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { requireAuth, AuthError } from '@/lib/auth/require-auth'
+import { safeUser } from '@/lib/serializers/safe-user'
 import { OnboardingSchema } from '@/lib/validations'
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-  }
-
   try {
+    const auth = await requireAuth(req)
+
     const body = await req.json()
     const parsed = OnboardingSchema.safeParse(body)
 
@@ -24,7 +21,7 @@ export async function POST(req: NextRequest) {
     const { pseudonym, avatarId } = parsed.data
 
     const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
+      where: { id: auth.userId },
     })
 
     if (!user) {
@@ -53,11 +50,17 @@ export async function POST(req: NextRequest) {
         avatarId,
         onboardingComplete: true,
       },
-      select: { alias: true, avatarId: true, onboardingComplete: true },
+      select: { alias: true, avatarId: true, bio: true, role: true, onboardingComplete: true },
     })
 
-    return NextResponse.json(updated)
+    return NextResponse.json({
+      user: safeUser(updated),
+      onboardingComplete: updated.onboardingComplete,
+    })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('[onboarding]', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

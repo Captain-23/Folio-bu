@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { AvatarIcon } from '@/components/avatar-icon'
 import { SiteHeader } from '@/components/site-header'
+import { AuthGuard } from '@/components/auth-guard'
+import { apiFetch } from '@/lib/api-client'
 import { isAvatarId } from '@/lib/avatars'
 
 type PublicProfile = {
@@ -27,7 +29,7 @@ type PublicProfile = {
   }>
 }
 
-export default function PublicProfilePage() {
+function PublicProfilePageContent() {
   const params = useParams<{ handle: string }>()
   const handle = Array.isArray(params?.handle) ? params.handle[0] : params?.handle
   const [profile, setProfile] = useState<PublicProfile | null>(null)
@@ -40,7 +42,7 @@ export default function PublicProfilePage() {
 
     const loadProfile = async () => {
       try {
-        const res = await fetch(`/api/profile/${encodeURIComponent(handle)}`)
+        const res = await apiFetch(`/api/users/${encodeURIComponent(handle)}`)
         const data = await res.json()
         if (!res.ok) {
           setError(typeof data.error === 'string' ? data.error : 'Could not load profile')
@@ -63,7 +65,7 @@ export default function PublicProfilePage() {
 
     setFollowLoading(true)
     try {
-      const res = await fetch(`/api/profile/${encodeURIComponent(handle)}/follow`, {
+      const res = await apiFetch(`/api/users/${encodeURIComponent(handle)}/follow`, {
         method: 'POST',
       })
       const data = await res.json()
@@ -190,5 +192,13 @@ export default function PublicProfilePage() {
         )}
       </main>
     </div>
+  )
+}
+
+export default function PublicProfilePage() {
+  return (
+    <AuthGuard>
+      <PublicProfilePageContent />
+    </AuthGuard>
   )
 }

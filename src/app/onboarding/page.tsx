@@ -2,27 +2,30 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useSession } from 'next-auth/react'
 import { AvatarPicker } from '@/components/avatar-picker'
+import { useAuth } from '@/contexts/auth-context'
+import { apiFetch } from '@/lib/api-client'
 import type { AvatarId } from '@/lib/avatars'
+import type { SafeUser } from '@/lib/serializers/safe-user'
 
 export default function OnboardingPage() {
   const router = useRouter()
-  const { data: session, status, update } = useSession()
+  const { user, loading, setUserLocal } = useAuth()
   const [pseudonym, setPseudonym] = useState('')
   const [avatarId, setAvatarId] = useState<AvatarId | null>(null)
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    if (status === 'unauthenticated') {
+    if (loading) return
+    if (!user) {
       router.replace('/login')
       return
     }
-    if (status === 'authenticated' && session?.user?.onboardingComplete) {
+    if (user.onboardingComplete) {
       router.replace('/feed')
     }
-  }, [status, session, router])
+  }, [loading, user, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -37,35 +40,37 @@ export default function OnboardingPage() {
       return
     }
 
-    setLoading(true)
+    setSubmitting(true)
     try {
-      const res = await fetch('/api/auth/onboarding', {
+      const res = await apiFetch('/api/auth/onboarding', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pseudonym: pseudonym.trim(), avatarId }),
       })
 
-      const data = await res.json()
+      const data = (await res.json()) as {
+        error?: string
+        user?: SafeUser
+        onboardingComplete?: boolean
+      }
+
       if (!res.ok) {
         setError(typeof data.error === 'string' ? data.error : 'Could not save profile')
         return
       }
 
-      await update({
-        alias: data.alias,
-        avatarId: data.avatarId,
-        onboardingComplete: true,
-      })
+      if (data.user) {
+        setUserLocal(data.user, data.onboardingComplete === true)
+      }
 
       router.push('/feed')
     } catch {
       setError('An error occurred. Please try again.')
     } finally {
-      setLoading(false)
+      setSubmitting(false)
     }
   }
 
-  if (status === 'loading') {
+  if (loading) {
     return (
       <div className="min-h-screen bg-background text-on-background flex items-center justify-center font-body-md">
         Loading...
@@ -73,7 +78,7 @@ export default function OnboardingPage() {
     )
   }
 
-  if (status === 'unauthenticated' || session?.user?.onboardingComplete) {
+  if (!user || user.onboardingComplete) {
     return null
   }
 
@@ -132,10 +137,10 @@ export default function OnboardingPage() {
 
             <button
               type="submit"
-              disabled={loading || !pseudonym.trim() || !avatarId}
+              disabled={submitting || !pseudonym.trim() || !avatarId}
               className="w-full bg-secondary text-on-secondary border-2 border-on-background font-label-lg text-label-lg uppercase py-4 shadow-[4px_4px_0px_0px_#653d1e] hover:translate-x-[2px] hover:translate-y-[2px] transition-all disabled:opacity-50"
             >
-              {loading ? 'Saving...' : 'Enter the Village'}
+              {submitting ? 'Saving...' : 'Enter the Village'}
             </button>
           </form>
         </div>

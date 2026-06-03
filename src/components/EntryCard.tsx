@@ -13,7 +13,7 @@ interface EntryCardProps {
 }
 
 export default function EntryCard({
-  id,
+  id: _id,
   content,
   mood,
   aiReflection,

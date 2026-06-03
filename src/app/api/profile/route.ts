@@ -1,36 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { requireAuth, AuthError } from '@/lib/auth/require-auth'
+import { handleRouteError } from '@/lib/api/errors'
+import { safeUser } from '@/lib/serializers/safe-user'
 import { UpdateProfileSchema } from '@/lib/validations'
 
-export async function GET() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+export async function GET(req: NextRequest) {
+  try {
+    const auth = await requireAuth(req)
+
+    const user = await prisma.user.findUnique({
+      where: { id: auth.userId },
+      select: { alias: true, avatarId: true, bio: true, role: true },
+    })
+
+    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+
+    return NextResponse.json({
+      alias: user.alias ?? '',
+      avatarId: user.avatarId ?? 'robot',
+      bio: user.bio ?? '',
+    })
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    return handleRouteError(error)
   }
-
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { alias: true, avatarId: true, bio: true },
-  })
-
-  if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-
-  return NextResponse.json({
-    alias: user.alias ?? '',
-    avatarId: user.avatarId ?? 'robot',
-    bio: user.bio ?? '',
-  })
 }
 
 export async function PATCH(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
-  }
-
   try {
+    const auth = await requireAuth(req)
+
     const body = await req.json()
     const parsed = UpdateProfileSchema.safeParse(body)
     if (!parsed.success) {
@@ -39,21 +41,24 @@ export async function PATCH(req: NextRequest) {
     }
 
     const updated = await prisma.user.update({
-      where: { id: session.user.id },
+      where: { id: auth.userId },
       data: {
         avatarId: parsed.data.avatarId,
         bio: parsed.data.bio?.trim() ?? '',
       },
-      select: { alias: true, avatarId: true, bio: true },
+      select: { alias: true, avatarId: true, bio: true, role: true },
     })
 
     return NextResponse.json({
       alias: updated.alias ?? '',
       avatarId: updated.avatarId ?? 'robot',
       bio: updated.bio ?? '',
+      user: safeUser(updated),
     })
   } catch (error) {
-    console.error('[profile:update]', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    return handleRouteError(error)
   }
 }

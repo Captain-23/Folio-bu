@@ -1,15 +1,12 @@
-// GET /api/entries/weekly-digest
-// Returns most-reacted published entries for the current week.
-
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { requireAuth, AuthError } from '@/lib/auth/require-auth'
+import { handleRouteError } from '@/lib/api/errors'
 
 const DIGEST_LIMIT = 6
 
 function getCurrentWeekRange(now = new Date()) {
-  const day = now.getDay() // 0 = Sunday
+  const day = now.getDay()
   const daysSinceMonday = (day + 6) % 7
 
   const start = new Date(now)
@@ -23,27 +20,34 @@ function getCurrentWeekRange(now = new Date()) {
 }
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+  try {
+    await requireAuth(req)
 
-  const { start, end } = getCurrentWeekRange()
+    const { start, end } = getCurrentWeekRange()
 
-  const entries = await prisma.entry.findMany({
-    where: {
-      isPublished: true,
-      createdAt: { gte: start, lt: end },
-    },
-    orderBy: [{ reactions: { _count: 'desc' } }, { createdAt: 'desc' }],
-    take: DIGEST_LIMIT,
-    select: {
-      id: true,
-      content: true,
-      mood: true,
-      createdAt: true,
-      user: { select: { alias: true } },
-      _count: { select: { reactions: true } },
-    },
-  })
+    const entries = await prisma.entry.findMany({
+      where: {
+        isPublished: true,
+        isRemoved: false,
+        createdAt: { gte: start, lt: end },
+      },
+      orderBy: [{ reactions: { _count: 'desc' } }, { createdAt: 'desc' }],
+      take: DIGEST_LIMIT,
+      select: {
+        id: true,
+        content: true,
+        mood: true,
+        createdAt: true,
+        user: { select: { alias: true, avatarId: true } },
+        _count: { select: { reactions: true } },
+      },
+    })
 
-  return NextResponse.json({ entries, weekStart: start.toISOString(), weekEnd: end.toISOString() })
+    return NextResponse.json({ entries, weekStart: start.toISOString(), weekEnd: end.toISOString() })
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    return handleRouteError(error)
+  }
 }

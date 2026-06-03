@@ -1,26 +1,115 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { JournalMarkdown } from '@/components/journal-markdown'
 import { SiteHeader } from '@/components/site-header'
+import { apiFetch } from '@/lib/api-client'
 import type { FeedEntry } from '@/lib/feed-entries'
+import { AVATAR_DISPLAY } from '@/lib/avatar-display'
+
+type ApiComment = {
+  id: string
+  content: string
+  createdAt: string
+  user: { alias: string | null; avatarId: string | null }
+}
 
 type JournalEntryViewProps = {
   entry: FeedEntry
+  entryId?: string
+  reactionCount?: number
+  hasReacted?: boolean
+  onReactionChange?: (count: number, reacted: boolean) => void
 }
 
-export function JournalEntryView({ entry }: JournalEntryViewProps) {
+export function JournalEntryView({
+  entry,
+  entryId,
+  reactionCount: initialCount = 0,
+  hasReacted: initialReacted = false,
+  onReactionChange,
+}: JournalEntryViewProps) {
   const [comments] = useState(entry.comments)
+  const [apiComments, setApiComments] = useState<ApiComment[]>([])
   const [messageInput, setMessageInput] = useState('')
+  const [posting, setPosting] = useState(false)
   const [reactions, setReactions] = useState(entry.reactions)
   const [selectedReaction, setSelectedReaction] = useState<string | null>(null)
+  const [apiReactionCount, setApiReactionCount] = useState(initialCount)
+  const [apiHasReacted, setApiHasReacted] = useState(initialReacted)
+  const [reacting, setReacting] = useState(false)
+
+  // Fetch real comments for DB entries
+  useEffect(() => {
+    if (!entryId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await apiFetch(`/api/entries/${encodeURIComponent(entryId)}/comments`)
+        if (res.ok && !cancelled) {
+          const data = (await res.json()) as { comments: ApiComment[] }
+          setApiComments(data.comments)
+        }
+      } catch {
+        // silently ignore — message board just stays empty
+      }
+    })()
+    return () => { cancelled = true }
+  }, [entryId])
 
   const REACTION_OPTIONS = ['❤️', '💙', '👏', '🔥', '😢', '🌱'] as const
 
-  const handlePostMessage = () => {
-    if (messageInput.trim()) {
+  const handleApiResonate = async () => {
+    if (!entryId || reacting) return
+
+    setReacting(true)
+    try {
+      const res = await apiFetch(`/api/entries/${encodeURIComponent(entryId)}/react`, {
+        method: 'POST',
+      })
+      const data = (await res.json()) as {
+        reacted?: boolean
+        reactionCount?: number
+        error?: string
+      }
+
+      if (res.ok && typeof data.reactionCount === 'number' && typeof data.reacted === 'boolean') {
+        setApiReactionCount(data.reactionCount)
+        setApiHasReacted(data.reacted)
+        onReactionChange?.(data.reactionCount, data.reacted)
+      }
+    } finally {
+      setReacting(false)
+    }
+  }
+
+  const handlePostMessage = async () => {
+    if (!messageInput.trim() || posting) return
+
+    // Mock entries — no backend
+    if (!entryId) {
       console.log('Posting message:', messageInput)
       setMessageInput('')
+      return
+    }
+
+    setPosting(true)
+    try {
+      const res = await apiFetch(
+        `/api/entries/${encodeURIComponent(entryId)}/comments`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ content: messageInput.trim() }),
+        }
+      )
+      if (res.ok) {
+        const data = (await res.json()) as { comment: ApiComment }
+        setApiComments((prev) => [...prev, data.comment])
+        setMessageInput('')
+      }
+    } finally {
+      setPosting(false)
     }
   }
 
@@ -120,11 +209,10 @@ export function JournalEntryView({ entry }: JournalEntryViewProps) {
               }}
             />
 
-            {entry.paragraphs.map((paragraph, i) => (
-              <p key={i} className="relative z-10">
-                {paragraph}
-              </p>
-            ))}
+            <JournalMarkdown
+              content={entry.markdownBody ?? entry.paragraphs.join('\n\n')}
+              className="relative z-10"
+            />
 
             {entry.quote && (
               <blockquote className="relative z-10 border-l-4 border-primary pl-4 italic text-on-surface-variant font-body-md text-body-md my-8">
@@ -146,6 +234,30 @@ export function JournalEntryView({ entry }: JournalEntryViewProps) {
             )}
           </div>
 
+          {entryId && (
+            <div className="mt-12 flex flex-wrap items-center gap-4 bg-surface p-4 border-2 border-on-background">
+              <span className="font-label-lg text-label-lg text-on-surface-variant mr-2">
+                Resonate:
+              </span>
+              <button
+                type="button"
+                onClick={handleApiResonate}
+                disabled={reacting}
+                className={`flex items-center gap-1 px-4 py-2 border-2 border-on-background shadow-[2px_2px_0px_0px_#865046] hover:translate-x-[2px] hover:translate-y-[2px] transition-transform disabled:opacity-50 ${
+                  apiHasReacted
+                    ? 'bg-primary-container text-on-primary-container'
+                    : 'bg-surface-container-highest text-primary'
+                }`}
+              >
+                <span className="font-label-lg text-label-lg">
+                  ♥ {apiReactionCount}
+                  {apiHasReacted ? ' · you' : ''}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {!entryId && (
           <div className="mt-12 flex flex-wrap items-center gap-4 bg-surface p-4 border-2 border-on-background">
             <span className="font-label-lg text-label-lg text-on-surface-variant mr-2">
               Reactions:
@@ -167,7 +279,9 @@ export function JournalEntryView({ entry }: JournalEntryViewProps) {
               </button>
             ))}
           </div>
+          )}
 
+          {!entryId && (
           <div className="mt-4 bg-surface-container p-4 border-2 border-on-background">
             <p className="font-label-sm text-label-sm text-on-surface-variant uppercase mb-3">
               Add your reaction
@@ -190,6 +304,7 @@ export function JournalEntryView({ entry }: JournalEntryViewProps) {
               ))}
             </div>
           </div>
+          )}
 
           <div className="h-1 bg-[linear-gradient(to_right,#1e1b16_50%,transparent_50%)] bg-[length:8px_100%] w-full my-12" />
 
@@ -201,7 +316,7 @@ export function JournalEntryView({ entry }: JournalEntryViewProps) {
               >
                 forum
               </span>
-              Message Board ({comments.length})
+              Message Board ({entryId ? apiComments.length : comments.length})
             </h3>
 
             <div className="bg-surface-container p-4 border-4 border-on-background mb-8">
@@ -218,15 +333,17 @@ export function JournalEntryView({ entry }: JournalEntryViewProps) {
                 <button
                   type="button"
                   onClick={handlePostMessage}
-                  className="bg-secondary text-on-secondary font-label-lg text-label-lg px-4 py-2 border-2 border-on-background shadow-[2px_2px_0px_0px_#4b6546] hover:translate-x-[2px] hover:translate-y-[2px] transition-all duration-75"
+                  disabled={posting || !messageInput.trim()}
+                  className="bg-secondary text-on-secondary font-label-lg text-label-lg px-4 py-2 border-2 border-on-background shadow-[2px_2px_0px_0px_#4b6546] hover:translate-x-[2px] hover:translate-y-[2px] transition-all duration-75 disabled:opacity-50"
                 >
-                  Post Message
+                  {posting ? 'Posting...' : 'Post Message'}
                 </button>
               </div>
             </div>
 
             <div className="space-y-6">
-              {comments.map((comment) => (
+              {/* Mock comments for mock entries */}
+              {!entryId && comments.map((comment) => (
                 <div key={comment.id} className="flex gap-4">
                   <div
                     className={`w-12 h-12 ${comment.avatarBg} border-2 border-on-background flex-shrink-0 flex items-center justify-center ${comment.avatarTextColor} font-headline-md`}
@@ -249,6 +366,41 @@ export function JournalEntryView({ entry }: JournalEntryViewProps) {
                   </div>
                 </div>
               ))}
+
+              {/* Real comments for DB entries */}
+              {entryId && apiComments.map((comment) => {
+                const display = AVATAR_DISPLAY[comment.user.avatarId ?? ''] ?? AVATAR_DISPLAY._default
+                const alias = comment.user.alias ?? 'anonymous'
+                const ts = new Date(comment.createdAt).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+                return (
+                  <div key={comment.id} className="flex gap-4">
+                    <div
+                      className={`w-12 h-12 ${display.bg} border-2 border-on-background flex-shrink-0 flex items-center justify-center ${display.text} font-headline-md`}
+                    >
+                      {display.letter}
+                    </div>
+                    <div className="flex-grow bg-surface p-4 border-2 border-on-background relative">
+                      <div className="absolute -left-2 top-4 w-4 h-4 bg-surface border-l-2 border-t-2 border-on-background transform -rotate-45" />
+                      <div className="flex justify-between items-start mb-2 relative z-10">
+                        <span className="font-label-lg text-label-lg text-primary">
+                          {alias}
+                        </span>
+                        <span className="font-label-sm text-label-sm text-on-surface-variant">
+                          {ts}
+                        </span>
+                      </div>
+                      <p className="font-body-md text-body-md text-on-background relative z-10">
+                        {comment.content}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </section>
         </article>

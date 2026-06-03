@@ -1,0 +1,386 @@
+// ============================================================
+// Folio BU — Prisma Schema
+// PostgreSQL · cuid IDs · Pseudonymous Identity
+// ============================================================
+// PRIVACY RULES (enforced across schema + API layer):
+//   1. `email` is NEVER returned in any public-facing response.
+//   2. Public identity is `alias` + `avatarId` only.
+//   3. Entries are not visible on the feed until `isPublished = true`.
+//   4. All social relationships are between pseudonymous users.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum Role {
+  STUDENT
+  ADMIN
+}
+
+enum Mood {
+  happy
+  sad
+  stress
+  anxious
+  grateful
+}
+
+// ============================================================
+// MODEL: User
+// Stores auth credentials + pseudonymous public profile.
+// ============================================================
+// VALIDATION (enforce in API layer):
+//   - email must match university domain (e.g. @bu.edu)
+//   - password minimum length: 8 chars (store bcrypt hash only)
+//   - alias max 32 chars, unique, no real names
+//   - bio max 240 chars
+//   - avatarId must be from an approved predefined list
+//   - agreed_to_rules must be true before account creation completes
+// ============================================================
+
+model User {
+  id                 String   @id @default(cuid())
+
+  // Auth — private, NEVER expose in API responses
+  email              String   @unique
+  password           String   // bcrypt hash
+
+  // Public pseudonymous identity
+  alias              String?  @unique @db.VarChar(32)
+  avatarId           String?  // one of predefined non-human pixel avatars
+  bio                String?  @db.VarChar(240)
+
+  // Onboarding
+  onboardingComplete Boolean  @default(false)
+  agreedToRules      Boolean  @default(false)   // must be true before account activates
+  agreedAt           DateTime?
+
+  // Access control
+  role               Role     @default(STUDENT)
+  isActive           Boolean  @default(true)    // false = suspended
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Relations
+  entries            Entry[]
+  reactions          Reaction[]
+  weeklyReflections  WeeklyReflection[]
+  reports            Report[]            // reports submitted by this user
+  moderationLogs     ModerationLog[]     // mod actions taken by this user (admin only)
+
+  // Follow graph — self-follow blocked at API layer (followerId != followingId)
+  followers          Follow[]            @relation("UserFollowers")
+  following          Follow[]            @relation("UserFollowing")
+
+  // Notifications
+  notifications      Notification[]      @relation("NotificationRecipient")
+  triggeredNotifs    Notification[]      @relation("NotificationActor")
+}
+
+// ============================================================
+// MODEL: Entry
+// A single journal entry written by a user.
+// ============================================================
+// VALIDATION (enforce in API layer):
+//   - content length must be 1..1000 chars
+//   - entries are hidden from public feed until isPublished = true
+//   - flagged entries should be reviewed before re-publishing
+//   - mood is optional but encouraged via daily prompt UI
+// ============================================================
+
+model Entry {
+  id           String   @id @default(cuid())
+
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  content      String   @db.VarChar(1000)
+  imageUrl     String?  @db.VarChar(500)
+  mood         Mood?
+
+  // AI enrichment — generated asynchronously after publish
+  aiReflection String?
+
+  // Visibility
+  isPublished  Boolean  @default(false)
+
+  // Moderation
+  isFlagged    Boolean  @default(false)
+  isRemoved    Boolean  @default(false)
+  flagReason   String?
+
+  // Computed helpers (set on save in API layer)
+  wordCount    Int?
+  readTimeSecs Int?     // estimated read time in seconds (avg 200wpm)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  reactions    Reaction[]
+  reports      Report[]
+  featured     FeaturedEntry?
+
+  // Indexes
+  @@index([userId])
+  @@index([isPublished, createdAt])  // powers the public feed query (newest published first)
+  @@index([isFlagged])               // powers moderation queue
+}
+
+// ============================================================
+// MODEL: Reaction
+// A single anonymous reaction per user per entry.
+// No reaction type — a simple "resonate" / heart.
+// ============================================================
+// QUERY PATTERN: reaction count per entry → COUNT where entryId = x
+// ============================================================
+
+model Reaction {
+  id        String   @id @default(cuid())
+
+  entryId   String
+  entry     Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  // One reaction per user per entry
+  @@unique([entryId, userId])
+  @@index([entryId])   // fast reaction count lookups per entry
+}
+
+// ============================================================
+// MODEL: Follow
+// Follower → Following relationship between pseudonymous users.
+// ============================================================
+// CAVEAT: self-follow (followerId == followingId) must be
+// blocked at the API layer before writing to this table.
+// ============================================================
+
+model Follow {
+  id          String   @id @default(cuid())
+
+  followerId  String
+  follower    User     @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+
+  followingId String
+  following   User     @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  // One follow relationship per pair
+  @@unique([followerId, followingId])
+  @@index([followingId])   // fast follower count lookup for a user's profile
+  @@index([followerId])    // fast following count lookup
+}
+
+// ============================================================
+// MODEL: DailyPrompt
+// One writing prompt per day, shown to users on the write page.
+// ============================================================
+
+model DailyPrompt {
+  id        String   @id @default(cuid())
+  prompt    String
+  date      DateTime @unique @db.Date   // one prompt per calendar day
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// ============================================================
+// MODEL: WeeklyReflection
+// AI-generated summary of a user's entries for a given week.
+// Generated asynchronously, stored once per user per week.
+// ============================================================
+
+model WeeklyReflection {
+  id        String   @id @default(cuid())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  content   String   // AI-generated weekly summary
+  weekStart DateTime @db.Date   // always Monday of that week (ISO week start)
+
+  createdAt DateTime @default(now())
+
+  // One reflection per user per week
+  @@unique([userId, weekStart])
+  @@index([userId])
+}
+
+// ============================================================
+// MODEL: Notification
+// Bell icon feed — reactions, comments, follows, milestones.
+// ============================================================
+
+model Notification {
+  id          String           @id @default(cuid())
+
+  // Recipient
+  userId      String
+  user        User             @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Who triggered it (null for system-generated notifications)
+  actorId     String?
+  actor       User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  type        NotificationType
+  message     String           // human-readable e.g. "pixel_fox reacted to your entry"
+  isRead      Boolean          @default(false)
+
+  // Optional context links
+  entryId     String?
+  createdAt   DateTime         @default(now())
+
+  @@index([userId, isRead])    // fast unread count for bell badge
+  @@index([userId, createdAt]) // notification feed ordered by newest
+}
+
+enum NotificationType {
+  reaction
+  follow
+  milestone
+  weekly_reflection_ready
+  daily_nudge
+  featured
+  moderation_warning
+}
+
+// ============================================================
+// MODEL: Milestone
+// Pixel art badges earned by users for platform activity.
+// Each milestone type can only be earned once per user.
+// ============================================================
+
+model Milestone {
+  id         String        @id @default(cuid())
+
+  userId     String
+  type       MilestoneType
+  earnedAt   DateTime      @default(now())
+
+  // One of each milestone type per user
+  @@unique([userId, type])
+  @@index([userId])
+}
+
+enum MilestoneType {
+  first_entry
+  streak_7
+  streak_30
+  streak_100
+  entries_10
+  entries_50
+  entries_100
+  first_reaction
+  first_follow
+}
+
+// ============================================================
+// MODEL: FeaturedEntry
+// One spotlighted journal entry per day on the feed.
+// Auto-selected by reaction count or manually by an admin.
+// ============================================================
+
+model FeaturedEntry {
+  id           String    @id @default(cuid())
+
+  entryId      String    @unique
+  entry        Entry     @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  featuredDate DateTime  @unique @db.Date   // one featured entry per calendar day
+  featuredById String?   // admin userId if manually selected; null if auto
+
+  createdAt    DateTime  @default(now())
+}
+
+// ============================================================
+// MODEL: Report
+// User-submitted reports on entries that violate platform rules.
+// ============================================================
+
+model Report {
+  id           String       @id @default(cuid())
+
+  reporterId   String
+  reporter     User         @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+
+  entryId      String
+  entry        Entry        @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  reason       ReportReason
+  details      String?      // optional extra context from reporter
+  status       ReportStatus @default(pending)
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([status])          // powers moderation review queue
+  @@index([entryId])
+}
+
+enum ReportReason {
+  real_name_mentioned
+  targeting_person
+  not_journaling
+  hate_speech
+  personal_info
+  other
+}
+
+enum ReportStatus {
+  pending
+  reviewed
+  actioned
+  dismissed
+}
+
+// ============================================================
+// MODEL: ModerationLog
+// Full audit trail of all moderation actions. Append-only.
+// ============================================================
+
+model ModerationLog {
+  id           String     @id @default(cuid())
+
+  moderatorId  String
+  moderator    User       @relation(fields: [moderatorId], references: [id], onDelete: Restrict)
+
+  targetType   TargetType
+  targetId     String     // ID of the entry, comment, or user actioned
+  action       ModAction
+  reason       String?    // moderator note
+
+  createdAt    DateTime   @default(now())
+
+  @@index([targetType, targetId])
+  @@index([moderatorId])
+}
+
+enum TargetType {
+  entry
+  user
+}
+
+enum ModAction {
+  removed
+  warned
+  suspended
+  reinstated
+  flagged
+  unflagged
+}

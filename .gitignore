@@ -46,6 +46,10 @@ Thumbs.db
 *.swo
 *~
 
+# User-uploaded journal images (keep folder via .gitkeep)
+public/uploads/entries/*
+!public/uploads/entries/.gitkeep
+
 # Prisma local SQLite (if used)
 prisma/dev.db
 prisma/dev.db-journal

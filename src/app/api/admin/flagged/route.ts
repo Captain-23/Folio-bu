@@ -1,31 +1,30 @@
-// GET /api/admin/flagged
-// Returns all flagged entries (admin only).
-
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { requireAdmin } from '@/lib/auth/require-admin'
+import { AuthError } from '@/lib/auth/require-auth'
+import { handleRouteError } from '@/lib/api/errors'
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+  try {
+    await requireAdmin(req)
 
-  // Check if user is admin
-  if (session.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const flagged = await prisma.entry.findMany({
+      where: { isFlagged: true, isRemoved: false },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        content: true,
+        flagReason: true,
+        createdAt: true,
+        user: { select: { alias: true, avatarId: true } },
+      },
+    })
+
+    return NextResponse.json({ flagged })
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    return handleRouteError(error)
   }
-
-  const flagged = await prisma.entry.findMany({
-    where: { isFlagged: true },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      id: true,
-      content: true,
-      flagReason: true,
-      createdAt: true,
-      user: { select: { alias: true } },
-    },
-  })
-
-  return NextResponse.json({ flagged })
 }

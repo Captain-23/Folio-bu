@@ -27,6 +27,8 @@ export type FeedEntry = {
   timestamp: string
   category?: string
   title: string
+  /** Raw journal text (may include **bold** / *italic* markdown) */
+  markdownBody?: string
   paragraphs: string[]
   imageUrl?: string
   imageAlt?: string

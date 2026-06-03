@@ -1,9 +1,6 @@
-// GET /api/profile/milestones
-// Returns milestone progress computed from the current user's journal history.
-
-import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth, AuthError } from '@/lib/auth/require-auth'
+import { handleRouteError } from '@/lib/api/errors'
 import { prisma } from '@/lib/prisma'
 
 function toDateKey(date: Date) {
@@ -21,13 +18,9 @@ function getCurrentStreak(dateKeys: string[]) {
   yesterday.setDate(yesterday.getDate() - 1)
 
   let cursor = new Date(today)
-  const todayKey = toDateKey(today)
-  const yesterdayKey = toDateKey(yesterday)
-
-  if (!unique.has(todayKey) && unique.has(yesterdayKey)) {
+  if (!unique.has(toDateKey(today)) && unique.has(toDateKey(yesterday))) {
     cursor = yesterday
   }
-
   if (!unique.has(toDateKey(cursor))) return 0
 
   let streak = 0
@@ -39,25 +32,27 @@ function getCurrentStreak(dateKeys: string[]) {
   return streak
 }
 
-export async function GET() {
-  const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
+export async function GET(req: NextRequest) {
+  try {
+    const auth = await requireAuth(req)
 
-  const entries = await prisma.entry.findMany({
-    where: { userId: session.user.id },
-    select: {
-      createdAt: true,
-      _count: { select: { reactions: true } },
-    },
-  })
+    const entries = await prisma.entry.findMany({
+      where: { userId: auth.userId },
+      select: {
+        createdAt: true,
+        _count: { select: { reactions: true } },
+      },
+    })
 
-  const entriesCount = entries.length
-  const reactionsReceived = entries.reduce((sum, entry) => sum + entry._count.reactions, 0)
-  const streakDays = getCurrentStreak(entries.map((entry) => toDateKey(entry.createdAt)))
+    const entriesCount = entries.length
+    const reactionsReceived = entries.reduce((sum, entry) => sum + entry._count.reactions, 0)
+    const streakDays = getCurrentStreak(entries.map((entry) => toDateKey(entry.createdAt)))
 
-  return NextResponse.json({
-    entriesCount,
-    reactionsReceived,
-    streakDays,
-  })
+    return NextResponse.json({ entriesCount, reactionsReceived, streakDays })
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    return handleRouteError(error)
+  }
 }

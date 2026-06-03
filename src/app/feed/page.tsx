@@ -2,7 +2,9 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { AuthGuard } from '@/components/auth-guard'
 import { SiteHeader } from '@/components/site-header'
+import { apiFetch } from '@/lib/api-client'
 import { EXPLORE_FEED_IDS, TODAY_STRIP_IDS, getFeedEntry } from '@/lib/feed-entries'
 
 function stripCardClasses(variant?: 'secondary' | 'primary' | 'surface') {
@@ -36,9 +38,22 @@ function stripTextClasses(variant?: 'secondary' | 'primary' | 'surface') {
   }
 }
 
-export default function FeedPage() {
+type ApiFeedEntry = {
+  id: string
+  content: string
+  imageUrl: string | null
+  mood: string | null
+  createdAt: string
+  user: { alias: string | null; avatarId: string | null }
+  reactionCount: number
+  hasReacted: boolean
+}
+
+function FeedPageContent() {
   const stripEntries = TODAY_STRIP_IDS.map((id) => getFeedEntry(id)!)
   const exploreEntries = EXPLORE_FEED_IDS.map((id) => getFeedEntry(id)!)
+  const [apiEntries, setApiEntries] = useState<ApiFeedEntry[]>([])
+  const [entriesLoading, setEntriesLoading] = useState(true)
   const [weeklyDigest, setWeeklyDigest] = useState<
     Array<{
       id: string
@@ -54,7 +69,7 @@ export default function FeedPage() {
   useEffect(() => {
     const loadWeeklyDigest = async () => {
       try {
-        const res = await fetch('/api/entries/weekly-digest')
+        const res = await apiFetch('/api/entries/weekly-digest')
         if (!res.ok) return
 
         const data = (await res.json()) as {
@@ -77,6 +92,26 @@ export default function FeedPage() {
 
     loadWeeklyDigest()
   }, [])
+
+  useEffect(() => {
+    const loadEntries = async () => {
+      try {
+        const res = await apiFetch('/api/entries?page=1')
+        if (!res.ok) return
+
+        const data = (await res.json()) as { entries?: ApiFeedEntry[] }
+        setApiEntries(Array.isArray(data.entries) ? data.entries : [])
+      } catch {
+        setApiEntries([])
+      } finally {
+        setEntriesLoading(false)
+      }
+    }
+
+    loadEntries()
+  }, [])
+
+  const showApiExplore = apiEntries.length > 0
 
   return (
     <div className="min-h-screen bg-background text-on-background flex flex-col">
@@ -201,7 +236,49 @@ export default function FeedPage() {
             </h2>
           </div>
           <div className="columns-1 md:columns-2 lg:columns-3 gap-6 space-y-6">
-            {exploreEntries.map((entry) => (
+            {entriesLoading && (
+              <div className="break-inside-avoid bg-surface-container pixel-border p-5 text-on-surface-variant">
+                Loading community entries...
+              </div>
+            )}
+            {showApiExplore
+              ? apiEntries.map((entry) => (
+                  <Link
+                    key={entry.id}
+                    href={`/journal/${entry.id}`}
+                    className="break-inside-avoid bg-surface-container pixel-border pixel-shadow pixel-shadow-hover transition-all cursor-pointer group block hover:translate-x-[1px] hover:translate-y-[1px]"
+                  >
+                    <div className="p-5">
+                      {entry.imageUrl && (
+                        <div className="h-40 border-b-4 border-on-background overflow-hidden mb-4 -mx-5 -mt-5">
+                          <img
+                            src={entry.imageUrl}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between mb-4">
+                        <p className="font-label-lg text-label-lg text-on-surface">
+                          @{entry.user.alias ?? 'anonymous'}
+                        </p>
+                        <span className="bg-surface px-2 py-1 pixel-border-thin font-label-sm text-label-sm">
+                          ♥ {entry.reactionCount}
+                          {entry.hasReacted ? ' · you' : ''}
+                        </span>
+                      </div>
+                      {entry.mood && (
+                        <p className="font-label-sm text-label-sm text-primary uppercase mb-3">
+                          Mood: {entry.mood}
+                        </p>
+                      )}
+                      <p className="font-body-md text-body-md text-on-surface-variant mb-4 leading-relaxed line-clamp-6">
+                        {entry.content}
+                      </p>
+                    </div>
+                  </Link>
+                ))
+              : exploreEntries.map((entry) => (
               <Link
                 key={entry.id}
                 href={`/journal/${entry.id}`}
@@ -263,6 +340,11 @@ export default function FeedPage() {
               </Link>
             ))}
           </div>
+          {!entriesLoading && !showApiExplore && (
+            <p className="mt-4 font-label-sm text-label-sm text-on-surface-variant">
+              Showing sample entries until published journals appear in the feed.
+            </p>
+          )}
         </section>
       </main>
 
@@ -292,5 +374,13 @@ export default function FeedPage() {
         </Link>
       </nav>
     </div>
+  )
+}
+
+export default function FeedPage() {
+  return (
+    <AuthGuard>
+      <FeedPageContent />
+    </AuthGuard>
   )
 }
